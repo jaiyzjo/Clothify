@@ -1,0 +1,859 @@
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Clothing Brand eCommerce</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link
+    rel="stylesheet"
+    href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/5.15.3/css/all.min.css"
+  />
+  <link
+    href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600&display=swap"
+    rel="stylesheet"
+  />
+  <style>
+    body {
+      font-family: 'Inter', sans-serif;
+    }
+  </style>
+  <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-auth-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-firestore-compat.js"></script>
+  <script src="https://js.stripe.com/v3/"></script>
+</head>
+<body class="bg-gray-50 min-h-screen flex flex-col">
+
+  <!-- Navbar -->
+  <nav class="bg-white shadow sticky top-0 z-50">
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+      <div class="flex justify-between h-16 items-center">
+        <a href="#" class="text-2xl font-bold text-gray-900">Clothify</a>
+        <div class="hidden md:flex space-x-6 items-center">
+          <a href="#" id="nav-home" class="text-gray-700 hover:text-gray-900 font-semibold">Home</a>
+          <a href="#" id="nav-products" class="text-gray-700 hover:text-gray-900 font-semibold">Products</a>
+          <a href="#" id="nav-cart" class="relative text-gray-700 hover:text-gray-900 font-semibold">
+            <i class="fas fa-shopping-cart text-lg"></i>
+            <span id="cart-count" class="absolute -top-2 -right-3 bg-red-600 text-white rounded-full text-xs w-5 h-5 flex items-center justify-center">0</span>
+          </a>
+          <a href="#" id="nav-login" class="text-gray-700 hover:text-gray-900 font-semibold">Login</a>
+          <a href="#" id="nav-logout" class="hidden text-gray-700 hover:text-gray-900 font-semibold">Logout</a>
+        </div>
+        <div class="md:hidden">
+          <button id="mobile-menu-button" aria-label="Open menu" class="text-gray-700 hover:text-gray-900 focus:outline-none focus:ring-2 focus:ring-inset focus:ring-indigo-500">
+            <i class="fas fa-bars text-2xl"></i>
+          </button>
+        </div>
+      </div>
+    </div>
+    <div id="mobile-menu" class="hidden md:hidden bg-white border-t border-gray-200">
+      <a href="#" id="mobile-nav-home" class="block px-4 py-3 text-gray-700 hover:bg-gray-100 font-semibold">Home</a>
+      <a href="#" id="mobile-nav-products" class="block px-4 py-3 text-gray-700 hover:bg-gray-100 font-semibold">Products</a>
+      <a href="#" id="mobile-nav-cart" class="block px-4 py-3 text-gray-700 hover:bg-gray-100 font-semibold">Cart</a>
+      <a href="#" id="mobile-nav-login" class="block px-4 py-3 text-gray-700 hover:bg-gray-100 font-semibold">Login</a>
+      <a href="#" id="mobile-nav-logout" class="hidden px-4 py-3 text-gray-700 hover:bg-gray-100 font-semibold">Logout</a>
+    </div>
+  </nav>
+
+  <!-- Main Content -->
+  <main id="app" class="flex-grow">
+    <!-- Content will be injected here by JS -->
+  </main>
+
+  <!-- Footer -->
+  <footer class="bg-white border-t border-gray-200 py-6 mt-12">
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 text-center text-gray-500 text-sm">
+      &copy; 2024 Clothify. All rights reserved.
+    </div>
+  </footer>
+
+  <script>
+    // Firebase config - replace with your own config
+    const firebaseConfig = {
+      apiKey: "AIzaSyD-EXAMPLE-KEY-1234567890",
+      authDomain: "your-project.firebaseapp.com",
+      projectId: "your-project",
+      storageBucket: "your-project.appspot.com",
+      messagingSenderId: "1234567890",
+      appId: "1:1234567890:web:abcdef123456",
+      measurementId: "G-EXAMPLEMEASURE"
+    };
+
+    firebase.initializeApp(firebaseConfig);
+    const auth = firebase.auth();
+    const db = firebase.firestore();
+
+    // Stripe public key - replace with your own key
+    const stripe = Stripe("pk_test_51Hxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx");
+
+    // Global state
+    let products = [];
+    let filteredProducts = [];
+    let cart = {};
+    let currentUser = null;
+
+    // DOM references
+    const app = document.getElementById('app');
+    const cartCount = document.getElementById('cart-count');
+    const navLogin = document.getElementById('nav-login');
+    const navLogout = document.getElementById('nav-logout');
+    const mobileNavLogin = document.getElementById('mobile-nav-login');
+    const mobileNavLogout = document.getElementById('mobile-nav-logout');
+
+    // Mobile menu toggle
+    const mobileMenuButton = document.getElementById('mobile-menu-button');
+    const mobileMenu = document.getElementById('mobile-menu');
+    mobileMenuButton.addEventListener('click', () => {
+      mobileMenu.classList.toggle('hidden');
+    });
+
+    // Navigation links
+    document.getElementById('nav-home').addEventListener('click', e => { e.preventDefault(); renderHomePage(); closeMobileMenu(); });
+    document.getElementById('nav-products').addEventListener('click', e => { e.preventDefault(); renderProductListingPage(); closeMobileMenu(); });
+    document.getElementById('nav-cart').addEventListener('click', e => { e.preventDefault(); renderCartPage(); closeMobileMenu(); });
+    document.getElementById('nav-login').addEventListener('click', e => { e.preventDefault(); renderLoginPage(); closeMobileMenu(); });
+    document.getElementById('nav-logout').addEventListener('click', e => { e.preventDefault(); logoutUser(); closeMobileMenu(); });
+
+    document.getElementById('mobile-nav-home').addEventListener('click', e => { e.preventDefault(); renderHomePage(); closeMobileMenu(); });
+    document.getElementById('mobile-nav-products').addEventListener('click', e => { e.preventDefault(); renderProductListingPage(); closeMobileMenu(); });
+    document.getElementById('mobile-nav-cart').addEventListener('click', e => { e.preventDefault(); renderCartPage(); closeMobileMenu(); });
+    document.getElementById('mobile-nav-login').addEventListener('click', e => { e.preventDefault(); renderLoginPage(); closeMobileMenu(); });
+    document.getElementById('mobile-nav-logout').addEventListener('click', e => { e.preventDefault(); logoutUser(); closeMobileMenu(); });
+
+    function closeMobileMenu() {
+      if (!mobileMenu.classList.contains('hidden')) {
+        mobileMenu.classList.add('hidden');
+      }
+    }
+
+    // Utility: format price
+    function formatPrice(cents) {
+      return `$${(cents / 100).toFixed(2)}`;
+    }
+
+    // Load products from Firestore
+    async function loadProducts() {
+      const snapshot = await db.collection('products').get();
+      products = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+      filteredProducts = [...products];
+    }
+
+    // Save cart to localStorage
+    function saveCart() {
+      localStorage.setItem('cart', JSON.stringify(cart));
+      updateCartCount();
+    }
+
+    // Load cart from localStorage
+    function loadCart() {
+      const saved = localStorage.getItem('cart');
+      if (saved) {
+        cart = JSON.parse(saved);
+      } else {
+        cart = {};
+      }
+      updateCartCount();
+    }
+
+    // Update cart count in navbar
+    function updateCartCount() {
+      const count = Object.values(cart).reduce((acc, item) => acc + item.quantity, 0);
+      cartCount.textContent = count;
+      if (count === 0) {
+        cartCount.classList.add('hidden');
+      } else {
+        cartCount.classList.remove('hidden');
+      }
+    }
+
+    // Add product to cart
+    function addToCart(productId, selectedOptions = {}) {
+      if (!cart[productId]) {
+        cart[productId] = { quantity: 0, options: selectedOptions };
+      }
+      cart[productId].quantity++;
+      saveCart();
+      alert('Added to cart!');
+    }
+
+    // Remove product from cart
+    function removeFromCart(productId) {
+      delete cart[productId];
+      saveCart();
+      renderCartPage();
+    }
+
+    // Update quantity in cart
+    function updateCartQuantity(productId, quantity) {
+      if (quantity <= 0) {
+        removeFromCart(productId);
+      } else {
+        cart[productId].quantity = quantity;
+        saveCart();
+        renderCartPage();
+      }
+    }
+
+    // Render Home Page
+    async function renderHomePage() {
+      await loadProducts();
+      app.innerHTML = `
+        <section class="relative bg-indigo-600 text-white">
+          <img src="https://placehold.co/1600x500/png?text=Clothing+Brand+Banner+with+models+wearing+modern+clothes" alt="Banner showing models wearing modern clothing in a bright studio" class="w-full h-64 sm:h-96 object-cover brightness-75" />
+          <div class="absolute inset-0 flex flex-col justify-center items-center px-4 text-center">
+            <h1 class="text-3xl sm:text-5xl font-extrabold mb-4">Discover Your Style</h1>
+            <p class="text-lg sm:text-xl max-w-xl mb-6">Explore our latest collection of premium clothing designed for comfort and style.</p>
+            <button id="home-shop-now" class="bg-white text-indigo-600 font-semibold px-6 py-3 rounded-md hover:bg-gray-100 transition">Shop Now</button>
+          </div>
+        </section>
+
+        <section class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
+          <h2 class="text-2xl font-semibold text-gray-900 mb-6">Featured Products</h2>
+          <div class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-6" id="featured-products-grid">
+          </div>
+        </section>
+
+        <section class="bg-indigo-50 py-12">
+          <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 text-center">
+            <h2 class="text-2xl font-semibold text-indigo-900 mb-4">Special Promotion</h2>
+            <p class="text-indigo-700 mb-6 max-w-xl mx-auto">Get 20% off your first order! Use code <span class="font-bold">WELCOME20</span> at checkout.</p>
+            <button id="promo-shop-now" class="bg-indigo-600 text-white font-semibold px-6 py-3 rounded-md hover:bg-indigo-700 transition">Shop Now</button>
+          </div>
+        </section>
+      `;
+
+      // Render featured products (first 8)
+      const featuredGrid = document.getElementById('featured-products-grid');
+      const featured = products.slice(0, 8);
+      featured.forEach(product => {
+        const productCard = document.createElement('div');
+        productCard.className = 'bg-white rounded-lg shadow hover:shadow-lg transition cursor-pointer flex flex-col';
+        productCard.innerHTML = `
+          <img src="${product.images[0]}" alt="${product.name} - ${product.description}" class="w-full h-48 object-cover rounded-t-lg" />
+          <div class="p-4 flex flex-col flex-grow">
+            <h3 class="text-gray-900 font-semibold text-lg mb-1">${product.name}</h3>
+            <p class="text-gray-600 text-sm flex-grow">${product.description.substring(0, 60)}${product.description.length > 60 ? '...' : ''}</p>
+            <div class="mt-3 flex items-center justify-between">
+              <span class="text-indigo-600 font-bold">${formatPrice(product.price)}</span>
+              <button data-id="${product.id}" class="add-to-cart-btn bg-indigo-600 text-white px-3 py-1 rounded hover:bg-indigo-700 transition text-sm">Add</button>
+            </div>
+          </div>
+        `;
+        productCard.querySelector('img').addEventListener('click', () => renderProductDetailPage(product.id));
+        productCard.querySelector('h3').addEventListener('click', () => renderProductDetailPage(product.id));
+        productCard.querySelector('.add-to-cart-btn').addEventListener('click', e => {
+          e.stopPropagation();
+          addToCart(product.id);
+        });
+        featuredGrid.appendChild(productCard);
+      });
+
+      document.getElementById('home-shop-now').addEventListener('click', () => renderProductListingPage());
+      document.getElementById('promo-shop-now').addEventListener('click', () => renderProductListingPage());
+    }
+
+    // Render Product Listing Page
+    async function renderProductListingPage() {
+      await loadProducts();
+      filteredProducts = [...products];
+      app.innerHTML = `
+        <section class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+          <h1 class="text-3xl font-semibold text-gray-900 mb-6">Products</h1>
+          <div class="flex flex-col md:flex-row md:space-x-6">
+            <aside class="w-full md:w-64 mb-6 md:mb-0 bg-white rounded-lg shadow p-4">
+              <h2 class="font-semibold text-gray-800 mb-4">Filters</h2>
+              <div class="mb-4">
+                <label for="filter-category" class="block text-gray-700 font-medium mb-1">Category</label>
+                <select id="filter-category" class="w-full border border-gray-300 rounded px-3 py-2 focus:outline-none focus:ring-2 focus:ring-indigo-500">
+                  <option value="">All</option>
+                </select>
+              </div>
+              <div class="mb-4">
+                <label for="filter-price" class="block text-gray-700 font-medium mb-1">Max Price</label>
+                <input type="range" min="0" max="50000" step="1000" id="filter-price" class="w-full" />
+                <div class="text-sm text-gray-600 mt-1" id="filter-price-value">$500.00</div>
+              </div>
+              <button id="filter-reset" class="w-full bg-indigo-600 text-white py-2 rounded hover:bg-indigo-700 transition">Reset Filters</button>
+            </aside>
+            <div class="flex-grow grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-6">
+              <div id="products-grid" class="col-span-full grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-6"></div>
+            </div>
+          </div>
+        </section>
+      `;
+
+      // Populate category filter options
+      const categorySet = new Set(products.map(p => p.category));
+      const filterCategory = document.getElementById('filter-category');
+      categorySet.forEach(cat => {
+        const option = document.createElement('option');
+        option.value = cat;
+        option.textContent = cat.charAt(0).toUpperCase() + cat.slice(1);
+        filterCategory.appendChild(option);
+      });
+
+      const filterPrice = document.getElementById('filter-price');
+      const filterPriceValue = document.getElementById('filter-price-value');
+      filterPrice.value = 50000;
+      filterPriceValue.textContent = formatPrice(50000);
+
+      filterCategory.addEventListener('change', applyFilters);
+      filterPrice.addEventListener('input', () => {
+        filterPriceValue.textContent = formatPrice(filterPrice.value);
+        applyFilters();
+      });
+      document.getElementById('filter-reset').addEventListener('click', () => {
+        filterCategory.value = '';
+        filterPrice.value = 50000;
+        filterPriceValue.textContent = formatPrice(50000);
+        applyFilters();
+      });
+
+      function applyFilters() {
+        const cat = filterCategory.value;
+        const maxPrice = parseInt(filterPrice.value, 10);
+        filteredProducts = products.filter(p => {
+          return (cat === '' || p.category === cat) && p.price <= maxPrice;
+        });
+        renderProductsGrid();
+      }
+
+      function renderProductsGrid() {
+        const grid = document.getElementById('products-grid');
+        grid.innerHTML = '';
+        if (filteredProducts.length === 0) {
+          grid.innerHTML = '<p class="col-span-full text-center text-gray-500">No products found.</p>';
+          return;
+        }
+        filteredProducts.forEach(product => {
+          const productCard = document.createElement('div');
+          productCard.className = 'bg-white rounded-lg shadow hover:shadow-lg transition cursor-pointer flex flex-col';
+          productCard.innerHTML = `
+            <img src="${product.images[0]}" alt="${product.name} - ${product.description}" class="w-full h-48 object-cover rounded-t-lg" />
+            <div class="p-4 flex flex-col flex-grow">
+              <h3 class="text-gray-900 font-semibold text-lg mb-1">${product.name}</h3>
+              <p class="text-gray-600 text-sm flex-grow">${product.description.substring(0, 60)}${product.description.length > 60 ? '...' : ''}</p>
+              <div class="mt-3 flex items-center justify-between">
+                <span class="text-indigo-600 font-bold">${formatPrice(product.price)}</span>
+                <button data-id="${product.id}" class="add-to-cart-btn bg-indigo-600 text-white px-3 py-1 rounded hover:bg-indigo-700 transition text-sm">Add</button>
+              </div>
+            </div>
+          `;
+          productCard.querySelector('img').addEventListener('click', () => renderProductDetailPage(product.id));
+          productCard.querySelector('h3').addEventListener('click', () => renderProductDetailPage(product.id));
+          productCard.querySelector('.add-to-cart-btn').addEventListener('click', e => {
+            e.stopPropagation();
+            addToCart(product.id);
+          });
+          grid.appendChild(productCard);
+        });
+      }
+
+      renderProductsGrid();
+    }
+
+    // Render Product Detail Page
+    async function renderProductDetailPage(productId) {
+      const product = products.find(p => p.id === productId);
+      if (!product) {
+        app.innerHTML = `<p class="p-8 text-center text-gray-700">Product not found.</p>`;
+        return;
+      }
+      app.innerHTML = `
+        <section class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+          <button id="back-to-products" class="mb-6 text-indigo-600 hover:underline flex items-center gap-2">
+            <i class="fas fa-arrow-left"></i> Back to Products
+          </button>
+          <div class="flex flex-col md:flex-row md:space-x-8">
+            <div class="md:w-1/2">
+              <div class="mb-4">
+                <img id="main-product-image" src="${product.images[0]}" alt="${product.name} main image" class="w-full h-96 object-cover rounded-lg" />
+              </div>
+              <div class="flex space-x-4 overflow-x-auto">
+                ${product.images.map((img, i) => `
+                  <img src="${img}" alt="${product.name} image ${i + 1}" class="w-20 h-20 object-cover rounded cursor-pointer border-2 border-transparent hover:border-indigo-600" data-index="${i}" />
+                `).join('')}
+              </div>
+            </div>
+            <div class="md:w-1/2 mt-6 md:mt-0 flex flex-col">
+              <h1 class="text-3xl font-bold text-gray-900 mb-4">${product.name}</h1>
+              <p class="text-gray-700 mb-6">${product.description}</p>
+              <div class="text-indigo-600 font-bold text-2xl mb-6">${formatPrice(product.price)}</div>
+
+              <form id="product-options-form" class="flex flex-col space-y-4">
+                <div>
+                  <label for="size-select" class="block text-gray-700 font-semibold mb-1">Size</label>
+                  <select id="size-select" name="size" required class="w-full border border-gray-300 rounded px-3 py-2 focus:outline-none focus:ring-2 focus:ring-indigo-500">
+                    <option value="" disabled selected>Select size</option>
+                    ${product.sizes.map(size => `<option value="${size}">${size}</option>`).join('')}
+                  </select>
+                </div>
+                <div>
+                  <label for="color-select" class="block text-gray-700 font-semibold mb-1">Color</label>
+                  <select id="color-select" name="color" required class="w-full border border-gray-300 rounded px-3 py-2 focus:outline-none focus:ring-2 focus:ring-indigo-500">
+                    <option value="" disabled selected>Select color</option>
+                    ${product.colors.map(color => `<option value="${color}">${color}</option>`).join('')}
+                  </select>
+                </div>
+                <button type="submit" class="bg-indigo-600 text-white py-3 rounded font-semibold hover:bg-indigo-700 transition">Add to Cart</button>
+              </form>
+            </div>
+          </div>
+        </section>
+      `;
+
+      // Image thumbnails click
+      const thumbnails = app.querySelectorAll('img[data-index]');
+      const mainImage = document.getElementById('main-product-image');
+      thumbnails.forEach(thumb => {
+        thumb.addEventListener('click', () => {
+          mainImage.src = thumb.src;
+          thumbnails.forEach(t => t.classList.remove('border-indigo-600'));
+          thumb.classList.add('border-indigo-600');
+        });
+      });
+      if (thumbnails.length > 0) thumbnails[0].classList.add('border-indigo-600');
+
+      // Back button
+      document.getElementById('back-to-products').addEventListener('click', () => renderProductListingPage());
+
+      // Add to cart form
+      document.getElementById('product-options-form').addEventListener('submit', e => {
+        e.preventDefault();
+        const size = e.target.size.value;
+        const color = e.target.color.value;
+        if (!size || !color) {
+          alert('Please select size and color.');
+          return;
+        }
+        addToCart(product.id, { size, color });
+      });
+    }
+
+    // Render Cart Page
+    async function renderCartPage() {
+      await loadProducts();
+      app.innerHTML = `
+        <section class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+          <h1 class="text-3xl font-semibold text-gray-900 mb-6">Shopping Cart</h1>
+          <div id="cart-content" class="bg-white rounded-lg shadow p-6">
+          </div>
+        </section>
+      `;
+
+      const cartContent = document.getElementById('cart-content');
+      if (Object.keys(cart).length === 0) {
+        cartContent.innerHTML = `<p class="text-gray-700 text-center">Your cart is empty.</p>`;
+        return;
+      }
+
+      let totalCents = 0;
+      const cartItemsHtml = Object.entries(cart).map(([productId, item]) => {
+        const product = products.find(p => p.id === productId);
+        if (!product) return '';
+        const itemTotal = product.price * item.quantity;
+        totalCents += itemTotal;
+        return `
+          <div class="flex flex-col sm:flex-row sm:items-center sm:space-x-6 border-b border-gray-200 py-4">
+            <img src="${product.images[0]}" alt="${product.name} product image" class="w-24 h-24 object-cover rounded" />
+            <div class="flex-grow mt-4 sm:mt-0">
+              <h2 class="text-lg font-semibold text-gray-900">${product.name}</h2>
+              <p class="text-gray-600 text-sm">${product.description.substring(0, 80)}${product.description.length > 80 ? '...' : ''}</p>
+              <p class="text-gray-700 mt-1 text-sm">Size: ${item.options.size || 'N/A'}, Color: ${item.options.color || 'N/A'}</p>
+              <p class="text-indigo-600 font-bold mt-1">${formatPrice(product.price)}</p>
+            </div>
+            <div class="flex items-center space-x-2 mt-4 sm:mt-0">
+              <button data-id="${product.id}" class="decrease-qty bg-gray-200 hover:bg-gray-300 rounded px-2 py-1 text-gray-700"><i class="fas fa-minus"></i></button>
+              <input type="number" min="1" max="99" value="${item.quantity}" data-id="${product.id}" class="w-12 text-center border border-gray-300 rounded" />
+              <button data-id="${product.id}" class="increase-qty bg-gray-200 hover:bg-gray-300 rounded px-2 py-1 text-gray-700"><i class="fas fa-plus"></i></button>
+              <button data-id="${product.id}" class="remove-item text-red-600 hover:text-red-800 ml-4" title="Remove item"><i class="fas fa-trash-alt"></i></button>
+            </div>
+          </div>
+        `;
+      }).join('');
+
+      cartContent.innerHTML = `
+        ${cartItemsHtml}
+        <div class="mt-6 flex justify-between items-center">
+          <div class="text-xl font-bold text-gray-900">Total: ${formatPrice(totalCents)}</div>
+          <button id="checkout-button" class="bg-indigo-600 text-white px-6 py-3 rounded hover:bg-indigo-700 transition font-semibold">Proceed to Checkout</button>
+        </div>
+      `;
+
+      // Quantity buttons and inputs
+      cartContent.querySelectorAll('.decrease-qty').forEach(btn => {
+        btn.addEventListener('click', () => {
+          const id = btn.getAttribute('data-id');
+          const currentQty = cart[id].quantity;
+          if (currentQty > 1) {
+            updateCartQuantity(id, currentQty - 1);
+          }
+        });
+      });
+      cartContent.querySelectorAll('.increase-qty').forEach(btn => {
+        btn.addEventListener('click', () => {
+          const id = btn.getAttribute('data-id');
+          const currentQty = cart[id].quantity;
+          updateCartQuantity(id, currentQty + 1);
+        });
+      });
+      cartContent.querySelectorAll('input[type="number"]').forEach(input => {
+        input.addEventListener('change', () => {
+          const id = input.getAttribute('data-id');
+          let val = parseInt(input.value, 10);
+          if (isNaN(val) || val < 1) val = 1;
+          if (val > 99) val = 99;
+          input.value = val;
+          updateCartQuantity(id, val);
+        });
+      });
+      cartContent.querySelectorAll('.remove-item').forEach(btn => {
+        btn.addEventListener('click', () => {
+          const id = btn.getAttribute('data-id');
+          removeFromCart(id);
+        });
+      });
+
+      document.getElementById('checkout-button').addEventListener('click', () => {
+        if (!currentUser) {
+          alert('Please login to proceed to checkout.');
+          renderLoginPage();
+          return;
+        }
+        renderCheckoutPage();
+      });
+    }
+
+    // Render Checkout Page
+    async function renderCheckoutPage() {
+      await loadProducts();
+      if (Object.keys(cart).length === 0) {
+        app.innerHTML = `<p class="p-8 text-center text-gray-700">Your cart is empty.</p>`;
+        return;
+      }
+      app.innerHTML = `
+        <section class="max-w-3xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+          <h1 class="text-3xl font-semibold text-gray-900 mb-6">Checkout</h1>
+          <form id="checkout-form" class="bg-white rounded-lg shadow p-6 space-y-6">
+            <fieldset>
+              <legend class="text-lg font-semibold text-gray-700 mb-4">User Details</legend>
+              <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div>
+                  <label for="firstName" class="block text-gray-700 font-medium mb-1">First Name</label>
+                  <input type="text" id="firstName" name="firstName" required class="w-full border border-gray-300 rounded px-3 py-2 focus:outline-none focus:ring-2 focus:ring-indigo-500" />
+                </div>
+                <div>
+                  <label for="lastName" class="block text-gray-700 font-medium mb-1">Last Name</label>
+                  <input type="text" id="lastName" name="lastName" required class="w-full border border-gray-300 rounded px-3 py-2 focus:outline-none focus:ring-2 focus:ring-indigo-500" />
+                </div>
+                <div class="sm:col-span-2">
+                  <label for="email" class="block text-gray-700 font-medium mb-1">Email</label>
+                  <input type="email" id="email" name="email" required class="w-full border border-gray-300 rounded px-3 py-2 focus:outline-none focus:ring-2 focus:ring-indigo-500" />
+                </div>
+              </div>
+            </fieldset>
+
+            <fieldset>
+              <legend class="text-lg font-semibold text-gray-700 mb-4">Shipping Address</legend>
+              <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div class="sm:col-span-2">
+                  <label for="address" class="block text-gray-700 font-medium mb-1">Address</label>
+                  <input type="text" id="address" name="address" required class="w-full border border-gray-300 rounded px-3 py-2 focus:outline-none focus:ring-2 focus:ring-indigo-500" />
+                </div>
+                <div>
+                  <label for="city" class="block text-gray-700 font-medium mb-1">City</label>
+                  <input type="text" id="city" name="city" required class="w-full border border-gray-300 rounded px-3 py-2 focus:outline-none focus:ring-2 focus:ring-indigo-500" />
+                </div>
+                <div>
+                  <label for="state" class="block text-gray-700 font-medium mb-1">State/Province</label>
+                  <input type="text" id="state" name="state" required class="w-full border border-gray-300 rounded px-3 py-2 focus:outline-none focus:ring-2 focus:ring-indigo-500" />
+                </div>
+                <div>
+                  <label for="zip" class="block text-gray-700 font-medium mb-1">ZIP/Postal Code</label>
+                  <input type="text" id="zip" name="zip" required class="w-full border border-gray-300 rounded px-3 py-2 focus:outline-none focus:ring-2 focus:ring-indigo-500" />
+                </div>
+                <div>
+                  <label for="country" class="block text-gray-700 font-medium mb-1">Country</label>
+                  <input type="text" id="country" name="country" required class="w-full border border-gray-300 rounded px-3 py-2 focus:outline-none focus:ring-2 focus:ring-indigo-500" />
+                </div>
+              </div>
+            </fieldset>
+
+            <fieldset>
+              <legend class="text-lg font-semibold text-gray-700 mb-4">Payment Method</legend>
+              <div>
+                <label class="inline-flex items-center">
+                  <input type="radio" name="paymentMethod" value="card" checked class="form-radio text-indigo-600" />
+                  <span class="ml-2 text-gray-700">Credit/Debit Card</span>
+                </label>
+              </div>
+              <div class="mt-4" id="card-element-container">
+                <div id="card-element" class="p-3 border border-gray-300 rounded"></div>
+                <div id="card-errors" role="alert" class="text-red-600 mt-2"></div>
+              </div>
+            </fieldset>
+
+            <button type="submit" class="w-full bg-indigo-600 text-white py-3 rounded font-semibold hover:bg-indigo-700 transition">Place Order</button>
+          </form>
+        </section>
+      `;
+
+      // Prefill user email if logged in
+      if (currentUser) {
+        document.getElementById('email').value = currentUser.email || '';
+      }
+
+      // Initialize Stripe Elements
+      const elements = stripe.elements();
+      const cardElement = elements.create('card', { hidePostalCode: true });
+      cardElement.mount('#card-element');
+
+      const cardErrors = document.getElementById('card-errors');
+
+      const checkoutForm = document.getElementById('checkout-form');
+      checkoutForm.addEventListener('submit', async e => {
+        e.preventDefault();
+        cardErrors.textContent = '';
+
+        const firstName = checkoutForm.firstName.value.trim();
+        const lastName = checkoutForm.lastName.value.trim();
+        const email = checkoutForm.email.value.trim();
+        const address = checkoutForm.address.value.trim();
+        const city = checkoutForm.city.value.trim();
+        const state = checkoutForm.state.value.trim();
+        const zip = checkoutForm.zip.value.trim();
+        const country = checkoutForm.country.value.trim();
+        const paymentMethod = checkoutForm.paymentMethod.value;
+
+        if (!firstName || !lastName || !email || !address || !city || !state || !zip || !country) {
+          alert('Please fill in all required fields.');
+          return;
+        }
+
+        // Calculate total amount in cents
+        let totalCents = 0;
+        Object.entries(cart).forEach(([productId, item]) => {
+          const product = products.find(p => p.id === productId);
+          if (product) {
+            totalCents += product.price * item.quantity;
+          }
+        });
+
+        // Create payment intent on backend (simulate here)
+        // In real app, call your backend to create payment intent and get clientSecret
+        // For demo, we skip this and just confirm card payment with test clientSecret
+
+        // For demo purposes, we simulate a successful payment:
+        // In production, you must create a payment intent on your server and confirm here.
+
+        // Confirm card payment
+        const { error, paymentIntent } = await stripe.confirmCardPayment('pi_XXXXXXXXXXXXXXXX_secret_XXXXXXXXXXXXXXXX', {
+          payment_method: {
+            card: cardElement,
+            billing_details: {
+              name: `${firstName} ${lastName}`,
+              email: email,
+              address: {
+                line1: address,
+                city: city,
+                state: state,
+                postal_code: zip,
+                country: country
+              }
+            }
+          }
+        });
+
+        if (error) {
+          cardErrors.textContent = error.message;
+          return;
+        }
+
+        if (paymentIntent && paymentIntent.status === 'succeeded') {
+          // Save order info to Firestore
+          try {
+            await db.collection('orders').add({
+              userId: currentUser.uid,
+              email,
+              firstName,
+              lastName,
+              shippingAddress: { address, city, state, zip, country },
+              paymentMethod,
+              paymentIntentId: paymentIntent.id,
+              cart,
+              total: totalCents,
+              createdAt: firebase.firestore.FieldValue.serverTimestamp()
+            });
+            // Clear cart
+            cart = {};
+            saveCart();
+            alert('Order placed successfully!');
+            renderHomePage();
+          } catch (err) {
+            alert('Failed to save order. Please contact support.');
+          }
+        } else {
+          alert('Payment failed. Please try again.');
+        }
+      });
+    }
+
+    // Render Login Page
+    function renderLoginPage() {
+      app.innerHTML = `
+        <section class="max-w-md mx-auto px-4 sm:px-6 lg:px-8 py-12">
+          <h1 class="text-3xl font-semibold text-gray-900 mb-6 text-center">Login to Clothify</h1>
+          <form id="login-form" class="bg-white rounded-lg shadow p-6 space-y-6">
+            <div>
+              <label for="email" class="block text-gray-700 font-medium mb-1">Email</label>
+              <input type="email" id="email" name="email" required class="w-full border border-gray-300 rounded px-3 py-2 focus:outline-none focus:ring-2 focus:ring-indigo-500" />
+            </div>
+            <div>
+              <label for="password" class="block text-gray-700 font-medium mb-1">Password</label>
+              <input type="password" id="password" name="password" required class="w-full border border-gray-300 rounded px-3 py-2 focus:outline-none focus:ring-2 focus:ring-indigo-500" />
+            </div>
+            <button type="submit" class="w-full bg-indigo-600 text-white py-3 rounded font-semibold hover:bg-indigo-700 transition">Login</button>
+            <p class="text-center text-sm text-gray-600">
+              Don't have an account? <a href="#" id="go-to-signup" class="text-indigo-600 hover:underline">Sign Up</a>
+            </p>
+            <p class="text-center text-sm text-gray-600">
+              <a href="#" id="go-to-reset" class="text-indigo-600 hover:underline">Forgot Password?</a>
+            </p>
+          </form>
+        </section>
+      `;
+
+      document.getElementById('login-form').addEventListener('submit', async e => {
+        e.preventDefault();
+        const email = e.target.email.value.trim();
+        const password = e.target.password.value;
+        try {
+          await auth.signInWithEmailAndPassword(email, password);
+          alert('Logged in successfully!');
+          renderHomePage();
+        } catch (error) {
+          alert(error.message);
+        }
+      });
+
+      document.getElementById('go-to-signup').addEventListener('click', e => {
+        e.preventDefault();
+        renderSignUpPage();
+      });
+
+      document.getElementById('go-to-reset').addEventListener('click', e => {
+        e.preventDefault();
+        renderPasswordResetPage();
+      });
+    }
+
+    // Render Sign Up Page
+    function renderSignUpPage() {
+      app.innerHTML = `
+        <section class="max-w-md mx-auto px-4 sm:px-6 lg:px-8 py-12">
+          <h1 class="text-3xl font-semibold text-gray-900 mb-6 text-center">Create an Account</h1>
+          <form id="signup-form" class="bg-white rounded-lg shadow p-6 space-y-6">
+            <div>
+              <label for="email" class="block text-gray-700 font-medium mb-1">Email</label>
+              <input type="email" id="email" name="email" required class="w-full border border-gray-300 rounded px-3 py-2 focus:outline-none focus:ring-2 focus:ring-indigo-500" />
+            </div>
+            <div>
+              <label for="password" class="block text-gray-700 font-medium mb-1">Password</label>
+              <input type="password" id="password" name="password" required minlength="6" class="w-full border border-gray-300 rounded px-3 py-2 focus:outline-none focus:ring-2 focus:ring-indigo-500" />
+            </div>
+            <button type="submit" class="w-full bg-indigo-600 text-white py-3 rounded font-semibold hover:bg-indigo-700 transition">Sign Up</button>
+            <p class="text-center text-sm text-gray-600">
+              Already have an account? <a href="#" id="go-to-login" class="text-indigo-600 hover:underline">Login</a>
+            </p>
+          </form>
+        </section>
+      `;
+
+      document.getElementById('signup-form').addEventListener('submit', async e => {
+        e.preventDefault();
+        const email = e.target.email.value.trim();
+        const password = e.target.password.value;
+        try {
+          await auth.createUserWithEmailAndPassword(email, password);
+          alert('Account created and logged in!');
+          renderHomePage();
+        } catch (error) {
+          alert(error.message);
+        }
+      });
+
+      document.getElementById('go-to-login').addEventListener('click', e => {
+        e.preventDefault();
+        renderLoginPage();
+      });
+    }
+
+    // Render Password Reset Page
+    function renderPasswordResetPage() {
+      app.innerHTML = `
+        <section class="max-w-md mx-auto px-4 sm:px-6 lg:px-8 py-12">
+          <h1 class="text-3xl font-semibold text-gray-900 mb-6 text-center">Reset Password</h1>
+          <form id="reset-form" class="bg-white rounded-lg shadow p-6 space-y-6">
+            <div>
+              <label for="email" class="block text-gray-700 font-medium mb-1">Email</label>
+              <input type="email" id="email" name="email" required class="w-full border border-gray-300 rounded px-3 py-2 focus:outline-none focus:ring-2 focus:ring-indigo-500" />
+            </div>
+            <button type="submit" class="w-full bg-indigo-600 text-white py-3 rounded font-semibold hover:bg-indigo-700 transition">Send Reset Email</button>
+            <p class="text-center text-sm text-gray-600">
+              Remembered your password? <a href="#" id="go-to-login" class="text-indigo-600 hover:underline">Login</a>
+            </p>
+          </form>
+        </section>
+      `;
+
+      document.getElementById('reset-form').addEventListener('submit', async e => {
+        e.preventDefault();
+        const email = e.target.email.value.trim();
+        try {
+          await auth.sendPasswordResetEmail(email);
+          alert('Password reset email sent!');
+          renderLoginPage();
+        } catch (error) {
+          alert(error.message);
+        }
+      });
+
+      document.getElementById('go-to-login').addEventListener('click', e => {
+        e.preventDefault();
+        renderLoginPage();
+      });
+    }
+
+    // Logout user
+    async function logoutUser() {
+      try {
+        await auth.signOut();
+        alert('Logged out successfully!');
+        renderHomePage();
+      } catch (error) {
+        alert(error.message);
+      }
+    }
+
+    // Update UI based on auth state
+    auth.onAuthStateChanged(user => {
+      currentUser = user;
+      if (user) {
+        navLogin.classList.add('hidden');
+        navLogout.classList.remove('hidden');
+        mobileNavLogin.classList.add('hidden');
+        mobileNavLogout.classList.remove('hidden');
+      } else {
+        navLogin.classList.remove('hidden');
+        navLogout.classList.add('hidden');
+        mobileNavLogin.classList.remove('hidden');
+        mobileNavLogout.classList.add('hidden');
+      }
+    });
+
+    // Initial load
+    loadCart();
+    renderHomePage();
+  </script>
+</body>
+</html>
